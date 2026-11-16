@@ -414,6 +414,21 @@ export type Database = {
         Args: { p_expense_id: string };
         Returns: Json;
       };
+      get_trip_financials: {
+        Args: { p_trip_id: string };
+        Returns: Json;
+      };
+      record_trip_settlement: {
+        Args: {
+          p_trip_id: string;
+          p_from_participant_id: string;
+          p_to_participant_id: string;
+          p_amount: string;
+          p_payment_date: string;
+          p_notes?: string | null;
+        };
+        Returns: string;
+      };
     };
     Enums: {
       trip_participant_role: "owner" | "member";

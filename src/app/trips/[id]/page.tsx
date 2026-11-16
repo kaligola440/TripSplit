@@ -7,22 +7,33 @@ import { formatTripDate, TripShell } from "@/features/trips/trip-shell";
 import { AddParticipantForm, InvitationControls, RemoveParticipantControl } from "@/features/participants/participant-controls";
 import { invitationStatus } from "@/features/participants/status";
 import { ExpenseList } from "@/features/expenses/expense-list";
+import { TripFinancialsPanel } from "@/features/balances/trip-financials-panel";
+import { parseTripFinancials } from "@/features/balances/financial-data";
 
 export default async function TripDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined> & { created?: string; expenseDeleted?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined> & { created?: string; expenseDeleted?: string; settlementRecorded?: string }>;
 }) {
   const [{ supabase, userId }, { id }, query] = await Promise.all([requireAuthenticatedUser(), params, searchParams]);
   if (!isTripId(id)) notFound();
-  const { data: trip, error } = await supabase.from("trips").select("*").eq("id", id).maybeSingle();
+  const [
+    { data: trip, error },
+    { data: participants, error: participantError },
+    { data: invitations, error: invitationError },
+    { data: rawFinancials, error: financialsError },
+  ] = await Promise.all([
+    supabase.from("trips").select("*").eq("id", id).maybeSingle(),
+    supabase.from("trip_participants").select("id, user_id, display_name, email, role, status").eq("trip_id", id).order("created_at"),
+    supabase.from("trip_invitations").select("id, participant_id, email, status, expires_at, created_at").eq("trip_id", id).order("created_at", { ascending: false }),
+    supabase.rpc("get_trip_financials", { p_trip_id: id }),
+  ]);
   if (error) throw new Error("Unable to load trip.");
   if (!trip) notFound();
-  const { data: participants, error: participantError } = await supabase.from("trip_participants")
-    .select("id, user_id, display_name, email, role, status").eq("trip_id", id).order("created_at");
   if (participantError) throw new Error("Unable to load trip participants.");
-  const { data: invitations, error: invitationError } = await supabase.from("trip_invitations")
-    .select("id, participant_id, email, status, expires_at, created_at").eq("trip_id", id).order("created_at", { ascending: false });
   if (invitationError) throw new Error("Unable to load trip invitations.");
+  if (financialsError) throw new Error("Unable to load trip balances and settlements.");
+  const financials = parseTripFinancials(rawFinancials);
+  if (!financials) throw new Error("Trip balance data is invalid.");
   const owner = participants.find((participant) => participant.role === "owner");
   const canEdit = trip.created_by === userId && participants.some((participant) => participant.user_id === userId && participant.status === "active");
 
@@ -45,11 +56,7 @@ export default async function TripDetailPage({ params, searchParams }: {
               </div>
               <div className="mt-6 border-t border-slate-100 pt-5"><h3 className="text-sm font-medium">Description</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">{trip.description || "No description added yet."}</p></div>
             </div>
-            <div className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
-              <h2 className="text-lg font-semibold">More to come</h2>
-              <p className="mt-2 text-sm text-slate-600">These trip tools are not available yet.</p>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">{["Balances", "Settlements"].map((item) => <div key={item} className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500">{item} · Coming later</div>)}</div>
-            </div>
+            <TripFinancialsPanel tripId={id} currency={trip.currency} financials={financials} settlementRecorded={query.settlementRecorded === "1"} />
           </div>
           <div className="h-fit rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
             <div className="flex items-center gap-2"><UsersRound aria-hidden="true" size={20} className="text-emerald-700" /><h2 className="text-lg font-semibold">Participants</h2></div>

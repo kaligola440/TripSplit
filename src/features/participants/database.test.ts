@@ -54,6 +54,22 @@ async function createExpense(
   return result.rows[0].id;
 }
 
+async function addExternal(name: string, email: string) {
+  const result = await db.query<{ id: string }>(
+    "SELECT public.add_external_participant($1, $2, $3) AS id",
+    [tripId, name, email],
+  );
+  return result.rows[0].id;
+}
+
+async function recordSettlement(fromId: string, toId: string, amount: string) {
+  const result = await db.query<{ id: string }>(
+    "SELECT public.record_trip_settlement($1, $2, $3, $4, '2027-01-02', 'Test payment') AS id",
+    [tripId, fromId, toId, amount],
+  );
+  return result.rows[0].id;
+}
+
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(`
@@ -73,6 +89,7 @@ beforeAll(async () => {
     "20261114000001_row_level_security.sql",
     "20261116000000_participants_invitations.sql",
     "20261116000001_expense_management.sql",
+    "20261116000002_balances_settlements.sql",
   ]) {
     await db.exec(readFileSync(join("supabase", "migrations", migration), "utf8"));
   }
@@ -115,6 +132,134 @@ describe("invitation migration against PostgreSQL", () => {
     await asUser(invited);
     expect((await db.query("SELECT id FROM public.trips WHERE id = $1", [tripId])).rows).toHaveLength(0);
     await expect(db.query("SELECT public.add_external_participant($1, $2, $3)", [tripId, "Unauthorized", "x@example.com"])).rejects.toMatchObject({ code: "42501" });
+  });
+
+  describe("balances and settlements migration against PostgreSQL", () => {
+    it("calculates precise balances, records settlements atomically, and retains former participants' history", async () => {
+      const debtorId = await addExternal("Former guest", "former@example.com");
+      const creditorId = await addExternal("Payer", "payer@example.com");
+      await createExpense("10.000001", creditorId, [
+        { participant_id: debtorId, share_amount: "10.000001", share_type: "custom" },
+      ]);
+
+      await db.exec("RESET ROLE");
+      await db.query("UPDATE public.trip_participants SET status = 'inactive' WHERE id = $1", [debtorId]);
+      await asUser(owner);
+      const settlementId = await recordSettlement(debtorId, creditorId, "4.000001");
+      expect(settlementId).toMatch(/^[0-9a-f-]{36}$/i);
+
+      const { rows } = await db.query<{ data: {
+        participants: {
+          id: string;
+          status: string;
+          paid_amount: string;
+          owed_amount: string;
+          settlements_paid: string;
+          settlements_received: string;
+        }[];
+        settlements: {
+          id: string;
+          from_name: string;
+          to_name: string;
+          amount: string;
+          currency: string;
+          notes: string;
+        }[];
+      } }>("SELECT public.get_trip_financials($1) AS data", [tripId]);
+      const debtor = rows[0].data.participants.find((participant) => participant.id === debtorId);
+      const creditor = rows[0].data.participants.find((participant) => participant.id === creditorId);
+      expect(debtor).toEqual(expect.objectContaining({
+        status: "inactive",
+        paid_amount: "0",
+        owed_amount: "10.000001",
+        settlements_paid: "4.000001",
+        settlements_received: "0",
+      }));
+      expect(creditor).toEqual(expect.objectContaining({
+        paid_amount: "10.000001",
+        owed_amount: "0",
+        settlements_paid: "0",
+        settlements_received: "4.000001",
+      }));
+      expect(rows[0].data.settlements).toEqual([expect.objectContaining({
+        id: settlementId,
+        from_name: "Former guest",
+        to_name: "Payer",
+        amount: "4.000001",
+        currency: "EUR",
+        notes: "Test payment",
+      })]);
+      await expect(recordSettlement(debtorId, creditorId, "4.000001")).rejects.toMatchObject({ code: "23505" });
+      await expect(recordSettlement(debtorId, creditorId, "6.000001")).rejects.toMatchObject({ code: "23514" });
+      expect((await db.query("SELECT id FROM public.settlements WHERE trip_id = $1", [tripId])).rows).toHaveLength(1);
+    });
+
+    it("rejects unauthorized and cross-trip settlements, invalid amounts, and direct table writes", async () => {
+      const debtorId = await addExternal("Debtor", "debtor@example.com");
+      const creditorId = await addExternal("Creditor", "creditor@example.com");
+      await createExpense("5", creditorId, [
+        { participant_id: debtorId, share_amount: "5", share_type: "custom" },
+      ]);
+
+      await asUser(stranger);
+      await expect(recordSettlement(debtorId, creditorId, "1")).rejects.toMatchObject({ code: "42501" });
+
+      await asUser(owner);
+      await expect(recordSettlement(debtorId, debtorId, "1")).rejects.toMatchObject({ code: "22023" });
+      await expect(recordSettlement(debtorId, creditorId, "0")).rejects.toMatchObject({ code: "22023" });
+      await expect(recordSettlement(debtorId, creditorId, "not-a-number")).rejects.toMatchObject({ code: "22023" });
+      await expect(db.query(
+        `INSERT INTO public.settlements(trip_id, from_participant_id, to_participant_id, amount, currency, payment_date, created_by)
+         VALUES ($1, $2, $3, 1, 'EUR', '2027-01-01', $4)`,
+        [tripId, debtorId, creditorId, owner],
+      )).rejects.toMatchObject({ code: "42501" });
+      await expect(db.query("UPDATE public.settlements SET notes = 'changed' WHERE trip_id = $1", [tripId])).rejects.toMatchObject({ code: "42501" });
+      await expect(db.query("DELETE FROM public.settlements WHERE trip_id = $1", [tripId])).rejects.toMatchObject({ code: "42501" });
+
+      const otherTrip = await db.query<{ id: string }>(
+        "INSERT INTO public.trips(name, start_date, currency, created_by) VALUES ('Other trip', '2027-01-01', 'EUR', $1) RETURNING id",
+        [owner],
+      );
+      const outsideParticipant = await db.query<{ id: string }>(
+        "SELECT id FROM public.trip_participants WHERE trip_id = $1 AND role = 'owner'",
+        [otherTrip.rows[0].id],
+      );
+      await expect(db.query(
+        "SELECT public.record_trip_settlement($1, $2, $3, '1', '2027-01-02', NULL)",
+        [tripId, debtorId, outsideParticipant.rows[0].id],
+      )).rejects.toMatchObject({ code: "23503" });
+    });
+
+    it("enforces the payer's debt and recipient's credit independently", async () => {
+      const debtor = await addExternal("Debtor", "debtor-cap@example.com");
+      const primaryCreditor = await addExternal("Primary creditor", "primary-creditor@example.com");
+      const secondaryDebtor = await addExternal("Secondary debtor", "secondary-debtor@example.com");
+      const secondaryCreditor = await addExternal("Secondary creditor", "secondary-creditor@example.com");
+      const secondPayer = await addExternal("Second payer", "second-payer@example.com");
+      await createExpense("10", primaryCreditor, [
+        { participant_id: debtor, share_amount: "10", share_type: "custom" },
+      ]);
+      await createExpense("4", secondPayer, [
+        { participant_id: primaryCreditor, share_amount: "4", share_type: "custom" },
+      ]);
+      await createExpense("4", secondaryCreditor, [
+        { participant_id: secondaryDebtor, share_amount: "4", share_type: "custom" },
+      ]);
+
+      await expect(recordSettlement(debtor, primaryCreditor, "7")).rejects.toMatchObject({ code: "23514" });
+      await expect(recordSettlement(secondaryDebtor, primaryCreditor, "5")).rejects.toMatchObject({ code: "23514" });
+      expect((await db.query("SELECT id FROM public.settlements WHERE trip_id = $1", [tripId])).rows).toHaveLength(0);
+    });
+
+    it("does not expose trip financial data to non-members or pending invitees", async () => {
+      await invite("invitee@example.com");
+      const { rows } = await db.query<{ data: { participants: { status: string }[] } }>(
+        "SELECT public.get_trip_financials($1) AS data", [tripId],
+      );
+      expect(rows[0].data.participants.every((participant) => participant.status !== "invited")).toBe(true);
+      await asUser(stranger);
+      await expect(db.query("SELECT public.get_trip_financials($1)", [tripId])).rejects.toMatchObject({ code: "42501" });
+    });
   });
 
   describe("expense management migration against PostgreSQL", () => {

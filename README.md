@@ -64,8 +64,9 @@ for `supabase/migrations/20261116000001_expense_management.sql`. Do not rerun
 either migration after success. Their transactions roll back on failure.
 Dashboard execution does not add migration history to a CLI migration ledger.
 Back up the database and test on a staging project first. The migrations revoke
-direct participant and expense/share writes from `authenticated`; older or
-external clients that performed those writes must use authorized RPCs instead.
+direct participant, expense/share, and settlement writes from `authenticated`;
+older or external clients that performed those writes must use authorized RPCs
+instead.
 
 ### 4. Configure authentication URLs and email
 
@@ -139,7 +140,7 @@ created. Only the creator with active membership can edit a trip. A start date
 is required by the existing schema; destination and trip status are not stored.
 Trip deletion and archiving are not offered: the schema has no archive mechanism,
 and deletion can remove associated financial history. Balances and settlements
-management remain future features.
+are available on each trip's detail page.
 
 ## Participants and invitations
 
@@ -214,6 +215,35 @@ are blocked once any settlement exists for that trip. An active trip participant
 may create expenses; only their creator or the trip creator can edit or delete.
 This conservative lock can be replaced when a later settlement workflow models
 reconciliation explicitly.
+
+## Balances and settlements
+
+The trip detail page shows each active or former participant's expenses paid,
+expense shares owed, settlements paid and received, and final net balance.
+Positive means the participant should receive money; negative means they owe
+money. Monetary summaries are read as decimal text from an authenticated,
+trip-scoped database function and use exact integer micro-units in the UI.
+Former participants remain in the balance view when they have historical
+financial records; pending invitees are excluded.
+
+Suggested transfers use deterministic largest-balance-first matching and exact
+six-decimal arithmetic to produce a compact transfer list. Any active trip
+member can record a payment on behalf of participants. The database locks the
+trip, recomputes both outstanding balances and rejects a payment that exceeds
+either side's current balance. Payment currency is taken from the trip, and
+both participants must belong to that trip. Settlement history is immutable:
+direct insert, update, and delete rights are revoked, and there is no
+edit/delete interface. As before, any recorded settlement locks expense
+changes to avoid rewriting settled history.
+
+The balances/settlements migration is **required before deploying this code**.
+On an existing project, open **Supabase Dashboard → SQL Editor → New query**,
+paste and run the complete contents of
+`supabase/migrations/20261116000002_balances_settlements.sql`, after applying
+the participant and expense migrations if they are not already applied. Do not
+run the combined `manual-setup.sql` on an existing database; it is only for a
+new, empty project. Back up the database and test the ordered migrations in a
+staging project first. No migration is applied by the application.
 
 ## Checks
 
