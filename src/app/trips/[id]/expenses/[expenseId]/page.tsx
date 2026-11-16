@@ -7,6 +7,7 @@ import { TripShell, formatTripDate } from "@/features/trips/trip-shell";
 import { ExpenseActions } from "@/features/expenses/expense-actions";
 import { formatDatabaseAmount } from "@/features/expenses/money";
 import { parseExpenseDetail } from "@/features/expenses/expense-data";
+import { formatPersonName } from "@/lib/person-name";
 
 export default async function ExpenseDetailPage({ params, searchParams }: {
   params: Promise<{ id: string; expenseId: string }>;
@@ -36,7 +37,7 @@ export default async function ExpenseDetailPage({ params, searchParams }: {
     <div className="mt-7 rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
       <div className="grid gap-5 text-sm text-slate-600 sm:grid-cols-3">
         <p className="flex items-center gap-2"><CalendarDays aria-hidden="true" size={17} className="text-emerald-700" />{formatTripDate(expense.expense_date)}</p>
-        <p className="flex items-center gap-2"><Coins aria-hidden="true" size={17} className="text-emerald-700" />Paid by {expense.payer_name}</p>
+        <p className="flex min-w-0 items-center gap-2"><Coins aria-hidden="true" size={17} className="shrink-0 text-emerald-700" /><span className="min-w-0 break-words">Paid by {formatPersonName(expense.payer_name)}</span></p>
         <p className="flex items-center gap-2"><ReceiptText aria-hidden="true" size={17} className="text-emerald-700" />{method ? `${method.charAt(0).toUpperCase()}${method.slice(1)} split` : "No split"}</p>
       </div>
       {expense.notes ? <div className="mt-6 border-t border-slate-100 pt-5"><h2 className="text-sm font-semibold">Notes</h2><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{expense.notes}</p></div> : null}
@@ -44,7 +45,7 @@ export default async function ExpenseDetailPage({ params, searchParams }: {
     <div className="mt-6 rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
       <h2 className="text-lg font-semibold">Share breakdown</h2>
       <ul className="mt-4 divide-y divide-slate-100">{expense.shares.map((share) => <li key={share.participant_id} className="flex flex-wrap items-center justify-between gap-3 py-4">
-        <div><p className="font-medium">{share.display_name}</p>{share.share_type === "percentage" && share.share_percentage ? <p className="mt-1 text-xs text-slate-500">{formatDatabaseAmount(share.share_percentage)}%</p> : null}</div>
+        <div className="min-w-0"><p className="break-words font-medium">{formatPersonName(share.display_name)}</p>{share.share_type === "percentage" && share.share_percentage ? <p className="mt-1 text-xs text-slate-500">{formatDatabaseAmount(share.share_percentage)}%</p> : null}</div>
         <p className="font-semibold tabular-nums">{formatDatabaseAmount(share.share_amount)} {expense.currency}</p>
       </li>)}</ul>
     </div>

@@ -1,4 +1,5 @@
 import { formatUnits, parseMoney, parsePercentage, PERCENT_SCALE } from "@/features/expenses/money";
+import { formatPersonName } from "@/lib/person-name";
 
 export type SplitMethod = "equal" | "custom" | "percentage";
 export type SplitParticipant = { id: string; name: string };
@@ -39,7 +40,7 @@ export function calculateShares(
     let sum = 0n;
     for (const participant of sorted) {
       const share = parseMoney(values[participant.id] ?? "");
-      if (share === null || share < 0n) return { success: false, message: `Enter a valid non-negative share for ${participant.name}.`, field: `share-${participant.id}` };
+      if (share === null || share < 0n) return { success: false, message: `Enter a valid non-negative share for ${formatPersonName(participant.name)}.`, field: `share-${participant.id}` };
       amounts.push(share);
       percentages.push(null);
       sum += share;
@@ -49,7 +50,7 @@ export function calculateShares(
     const parsed: bigint[] = [];
     for (const participant of sorted) {
       const percentage = parsePercentage(values[participant.id] ?? "");
-      if (percentage === null) return { success: false, message: `Enter a percentage from 0 to 100 with up to six decimal places for ${participant.name}.`, field: `share-${participant.id}` };
+      if (percentage === null) return { success: false, message: `Enter a percentage from 0 to 100 with up to six decimal places for ${formatPersonName(participant.name)}.`, field: `share-${participant.id}` };
       parsed.push(percentage);
     }
     if (parsed.reduce((sum, value) => sum + value, 0n) !== 100n * PERCENT_SCALE) {

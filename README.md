@@ -179,6 +179,16 @@ history. Detailed balances and settlements are available on each trip page.
 
 ## Participants and invitations
 
+Person names are displayed in full from the existing `profiles.display_name`
+or `trip_participants.display_name`, including names returned by expense and
+settlement RPCs. The shared display formatter trims and collapses whitespace;
+it never extracts only the first word or invents a surname. Split-selection
+labels wrap rather than hiding surnames behind an ellipsis. Registered and
+external participants use the same display rule. This repository's schema has
+no separate first-name or last-name columns. Legacy participant records retain
+their stored names; a surname absent from those records cannot be recovered
+by display formatting, and profile edits do not synchronize participant names.
+
 Only an active trip creator can add external participants, invite users, resend
 or cancel invitations, or remove participants. External participants have no
 account access. An invitation can link an existing external participant without

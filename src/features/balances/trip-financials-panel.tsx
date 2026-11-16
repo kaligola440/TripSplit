@@ -8,6 +8,7 @@ import {
 } from "@/features/balances/balances";
 import type { TripFinancials } from "@/features/balances/financial-data";
 import { formatTripDate } from "@/features/trips/trip-shell";
+import { formatPersonName } from "@/lib/person-name";
 
 function amount(value: string, currency: string) {
   const units = parseExactUnits(value);
@@ -83,7 +84,7 @@ export function TripFinancialsPanel({
           const Icon = status.Icon;
           return <li key={participant.id} className="rounded-2xl border border-slate-200 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0"><p className="break-words font-semibold">{participant.name}</p>{participant.email ? <p className="mt-1 break-all text-xs text-slate-500">{participant.email}</p> : null}
+              <div className="min-w-0"><p className="break-words font-semibold">{formatPersonName(participant.name)}</p>{participant.email ? <p className="mt-1 break-all text-xs text-slate-500">{participant.email}</p> : null}
                 {participant.status === "inactive" ? <p className="mt-1 text-xs text-slate-500">Former participant · historical balance retained</p> : null}
               </div>
               <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${status.className}`}><Icon aria-hidden="true" size={14} />{status.text}</span>
@@ -104,7 +105,7 @@ export function TripFinancialsPanel({
       <div className="flex items-center gap-2"><HandCoins aria-hidden="true" size={18} className="text-emerald-700" /><h3 className="font-semibold">Suggested settlements</h3></div>
       {suggestions.length ? <ol className="mt-3 divide-y divide-slate-100 rounded-2xl border border-slate-200 px-4">
         {suggestions.map((suggestion, index) => <li key={`${suggestion.fromParticipantId}-${suggestion.toParticipantId}-${index}`} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
-          <p><span className="font-semibold">{suggestion.fromName}</span><span className="text-slate-500"> pays </span><span className="font-semibold">{suggestion.toName}</span></p>
+          <p className="min-w-0 break-words"><span className="font-semibold">{formatPersonName(suggestion.fromName)}</span><span className="text-slate-500"> pays </span><span className="font-semibold">{formatPersonName(suggestion.toName)}</span></p>
           <p className="font-semibold tabular-nums">{amount(suggestion.amount, currency)}</p>
         </li>)}
       </ol> : <p className="mt-3 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">Everyone is settled. There are no transfers to suggest.</p>}
@@ -116,7 +117,7 @@ export function TripFinancialsPanel({
       {settlements.length ? <ol className="mt-3 divide-y divide-slate-100">
         {settlements.map((settlement) => <li key={settlement.id} className="py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><p className="text-sm"><span className="font-semibold">{settlement.fromName}</span><span className="text-slate-500"> paid </span><span className="font-semibold">{settlement.toName}</span></p><p className="mt-1 text-xs text-slate-500">{formatTripDate(settlement.paymentDate)}</p></div>
+            <div className="min-w-0"><p className="break-words text-sm"><span className="font-semibold">{formatPersonName(settlement.fromName)}</span><span className="text-slate-500"> paid </span><span className="font-semibold">{formatPersonName(settlement.toName)}</span></p><p className="mt-1 text-xs text-slate-500">{formatTripDate(settlement.paymentDate)}</p></div>
             <p className="font-semibold tabular-nums">{amount(settlement.amount, settlement.currency)}</p>
           </div>
           {settlement.notes ? <details className="mt-2 text-sm"><summary className="w-fit cursor-pointer font-medium text-emerald-800 hover:underline">View details</summary><p className="mt-2 whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-slate-600">{settlement.notes}</p></details> : <p className="mt-2 text-xs text-slate-500">No note for this settlement.</p>}

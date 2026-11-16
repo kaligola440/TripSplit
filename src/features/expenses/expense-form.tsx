@@ -8,6 +8,7 @@ import { FormFeedback } from "@/features/auth/form-feedback";
 import { initialAuthFormState } from "@/features/auth/form-state";
 import { createExpense, updateExpense } from "@/features/expenses/actions";
 import { calculateShares, type SplitMethod } from "@/features/expenses/splits";
+import { formatPersonName } from "@/lib/person-name";
 
 export type ExpenseParticipant = { id: string; display_name: string };
 export type ExpenseInitialData = {
@@ -83,7 +84,7 @@ export function ExpenseForm({
         <select id="expense-category" name="category" defaultValue={expense?.category ?? "other"} aria-invalid={Boolean(errors.category)} aria-describedby={errors.category ? "expense-category-error" : undefined} className={fieldClass}>{categories.map((category) => <option key={category} value={category}>{category.charAt(0).toUpperCase() + category.slice(1)}</option>)}</select>
       </FormField>
       <FormField id="expense-payer" label="Paid by" error={errors.payerId}>
-        <select id="expense-payer" name="payerId" defaultValue={expense?.paid_by_participant_id ?? ""} required aria-invalid={Boolean(errors.payerId)} aria-describedby={errors.payerId ? "expense-payer-error" : undefined} className={fieldClass}><option value="" disabled>Select a participant</option>{participants.map((participant) => <option key={participant.id} value={participant.id}>{participant.display_name}</option>)}</select>
+        <select id="expense-payer" name="payerId" defaultValue={expense?.paid_by_participant_id ?? ""} required aria-invalid={Boolean(errors.payerId)} aria-describedby={errors.payerId ? "expense-payer-error" : undefined} className={fieldClass}><option value="" disabled>Select a participant</option>{participants.map((participant) => <option key={participant.id} value={participant.id}>{formatPersonName(participant.display_name)}</option>)}</select>
       </FormField>
     </div>
     <fieldset className="space-y-3">
@@ -91,7 +92,7 @@ export function ExpenseForm({
       {errors.participants ? <p role="alert" className="text-xs text-rose-700">{errors.participants}</p> : null}
       {participants.length ? participants.map((participant) => <label key={participant.id} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3.5 py-3 text-sm">
         <input type="checkbox" name="participantIds" value={participant.id} checked={selected.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} className="size-4 accent-emerald-800" />
-        <span className="min-w-0 flex-1 truncate font-medium">{participant.display_name}</span>
+        <span className="min-w-0 flex-1 break-words font-medium">{formatPersonName(participant.display_name)}</span>
         {selected.includes(participant.id) && preview ? <span className="shrink-0 text-slate-600">{preview.get(participant.id)} {tripCurrency}</span> : null}
       </label>) : <p className="text-sm text-slate-600">No active participants are available.</p>}
     </fieldset>
@@ -103,7 +104,7 @@ export function ExpenseForm({
     {method !== "equal" ? <fieldset className="space-y-3">
       <legend className="text-sm font-medium text-slate-700">{method === "custom" ? "Share amount" : "Share percentage"}</legend>
       {errors.shares ? <p role="alert" className="text-xs text-rose-700">{errors.shares}</p> : null}
-      {selectedParticipants.map((participant) => <FormField key={participant.id} id={`share-${participant.id}`} label={participant.display_name} error={errors[`share-${participant.id}`]}>
+      {selectedParticipants.map((participant) => <FormField key={participant.id} id={`share-${participant.id}`} label={formatPersonName(participant.display_name)} error={errors[`share-${participant.id}`]}>
         <div className="relative"><input id={`share-${participant.id}`} name={method === "custom" ? `amount-${participant.id}` : `percentage-${participant.id}`} type="text" inputMode="decimal" autoComplete="off" value={values[participant.id] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [participant.id]: event.target.value }))} placeholder="0" aria-invalid={Boolean(errors[`share-${participant.id}`])} className={`${fieldClass} pr-16`} /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-slate-500">{method === "custom" ? tripCurrency : "%"}</span></div>
         {method === "percentage" && preview ? <p className="mt-1 text-xs text-slate-500">Preview: {preview.get(participant.id)} {tripCurrency}</p> : null}
       </FormField>)}

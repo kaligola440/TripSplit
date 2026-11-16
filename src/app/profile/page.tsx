@@ -10,6 +10,7 @@ import { ProfileForm } from "@/features/auth/profile-form";
 import { signOut } from "@/features/auth/actions";
 import { SignOutButton } from "@/features/auth/sign-out-button";
 import { requireAuthenticatedUser } from "@/lib/supabase/auth";
+import { formatPersonName } from "@/lib/person-name";
 
 type ProfilePageProps = {
   searchParams: Promise<{
@@ -81,8 +82,7 @@ export default async function ProfilePage({
   const avatarUrl = profile.avatar_url?.startsWith("https://")
     ? profile.avatar_url
     : null;
-  const displayName =
-    profile.display_name?.trim() || claimsUser.user.email || "TripSplit member";
+  const displayName = formatPersonName(profile.display_name, claimsUser.user.email || "TripSplit member");
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#f7f8f6] px-5 text-slate-950 sm:px-8">

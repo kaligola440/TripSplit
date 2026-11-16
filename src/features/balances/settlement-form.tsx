@@ -7,6 +7,7 @@ import { initialAuthFormState } from "@/features/auth/form-state";
 import { recordTripSettlement } from "@/features/balances/actions";
 import { formatExactUnits, parseExactUnits } from "@/features/balances/balances";
 import type { BalanceParticipant } from "@/features/balances/balances";
+import { formatPersonName } from "@/lib/person-name";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -50,14 +51,14 @@ export function SettlementForm({
       <label className="block text-sm font-medium text-slate-700">Payer
         <select name="fromParticipantId" required defaultValue="" aria-describedby={state.fieldErrors?.fromParticipantId ? "settlement-payer-error" : undefined} className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm">
           <option value="" disabled>Select who paid</option>
-          {payers.map((participant) => <option key={participant.id} value={participant.id}>{participant.name} · owes {balanceLabel(participant.netBalance, true)} {currency}</option>)}
+          {payers.map((participant) => <option key={participant.id} value={participant.id}>{formatPersonName(participant.name)} · owes {balanceLabel(participant.netBalance, true)} {currency}</option>)}
         </select>
         {state.fieldErrors?.fromParticipantId ? <span id="settlement-payer-error" className="mt-1 block text-xs text-rose-700">{state.fieldErrors.fromParticipantId}</span> : null}
       </label>
       <label className="block text-sm font-medium text-slate-700">Recipient
         <select name="toParticipantId" required defaultValue="" aria-describedby={state.fieldErrors?.toParticipantId ? "settlement-recipient-error" : undefined} className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm">
           <option value="" disabled>Select who received it</option>
-          {recipients.map((participant) => <option key={participant.id} value={participant.id}>{participant.name} · is owed {balanceLabel(participant.netBalance)} {currency}</option>)}
+          {recipients.map((participant) => <option key={participant.id} value={participant.id}>{formatPersonName(participant.name)} · is owed {balanceLabel(participant.netBalance)} {currency}</option>)}
         </select>
         {state.fieldErrors?.toParticipantId ? <span id="settlement-recipient-error" className="mt-1 block text-xs text-rose-700">{state.fieldErrors.toParticipantId}</span> : null}
       </label>
