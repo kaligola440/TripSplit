@@ -98,15 +98,20 @@ export default async function ProfilePage({
               Trip<span className="text-emerald-700">Split</span>
             </span>
           </Link>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
-            >
-              <LogOut aria-hidden="true" size={16} />
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-4">
+            <Link href="/trips" className="text-sm font-semibold text-emerald-800 hover:underline">
+              Your trips
+            </Link>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+              >
+                <LogOut aria-hidden="true" size={16} />
+                Sign out
+              </button>
+            </form>
+          </div>
         </header>
 
         <section className="mx-auto grid max-w-5xl gap-8 py-10 md:grid-cols-[0.8fr_1.2fr] md:py-16">

@@ -84,6 +84,9 @@ export default function Home() {
                 Sign in
               </Link>
             </p>
+            <Link href="/trips" className="mt-4 block text-center text-sm font-semibold text-emerald-800 hover:underline">
+              Go to your trips
+            </Link>
           </aside>
         </section>
 

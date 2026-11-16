@@ -2,7 +2,8 @@
 
 TripSplit is a responsive Next.js application for shared trips and expenses.
 Email/password authentication and user profile management are implemented with
-Supabase Auth. Trip and expense management screens are not implemented yet.
+Supabase Auth. Authenticated users can create, view, and edit trips.
+Expense management screens are not implemented yet.
 
 ## Run the application
 
@@ -121,6 +122,16 @@ using the project's approved workflow and review the diff before replacing it.
   There is no per-login “Remember me” override in this UI.
 - The registration checkbox requires terms acceptance, but publishable Terms
   of Service and Privacy Policy content must be supplied before public launch.
+
+## Trips
+
+The Trips dashboard uses the signed-in user's existing RLS permissions.
+The database automatically adds the creator as an active owner when a trip is
+created. Only the creator with active membership can edit a trip. A start date
+is required by the existing schema; destination and trip status are not stored.
+Trip deletion and archiving are not offered: the schema has no archive mechanism,
+and deletion can remove associated financial history. Participants, expenses,
+balances and settlements management remain future features.
 
 ## Checks
 
