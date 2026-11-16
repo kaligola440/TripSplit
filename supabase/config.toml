@@ -1,0 +1,12 @@
+project_id = "tripsplit"
+
+[api]
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+enabled = false
