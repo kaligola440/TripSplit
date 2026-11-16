@@ -1,14 +1,16 @@
 # TripSplit
 
-TripSplit is a responsive Next.js application for shared trips and expenses.
-Email/password authentication and user profile management are implemented with
-Supabase Auth. Authenticated users can create, view, and edit trips.
-Trip creators can manage participants and email invitations. Expense management
-uses exact-decimal splits and the existing Supabase security model.
+TripSplit is a responsive web application for organizing shared trips,
+participants, expenses, balances, and settlement records. It uses Next.js App
+Router, React, strict TypeScript, Tailwind CSS, Lucide React, and Supabase Auth
+and PostgreSQL. Server Actions and database RPCs enforce authorization and
+financial rules; financial calculations use exact decimal text and integer
+micro-units.
 
 ## Run the application
 
-Use Node.js 20.9 or later and npm. Start the development server:
+Use Node.js 20.9 or later and npm. Configure the required environment variables
+below, then install dependencies and start the development server:
 
 ```bash
 npm install
@@ -17,9 +19,27 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) to view the app.
 
-The application uses the `@supabase/ssr` browser/server clients and the
-Next.js 16 `proxy.ts` convention. Keep the project's public URL and publishable
-key in `.env.local`; never add a service-role key to the application.
+The app uses the `@supabase/ssr` browser/server clients and the Next.js 16
+`proxy.ts` convention. The Supabase URL and publishable key are public client
+configuration protected by RLS. No service-role key is required or supported.
+
+## Environment variables
+
+Required in `.env.local` and in the matching Vercel environment:
+
+- `NEXT_PUBLIC_SUPABASE_URL` — Supabase project URL.
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — Supabase publishable key.
+
+Required for production invitation links and email:
+
+- `TRIPSPLIT_APP_URL` — exact site origin with no path or trailing slash.
+- `RESEND_API_KEY` — private Resend API key.
+- `INVITATION_FROM_EMAIL` — sender address on the verified domain.
+
+The invitation variables must remain server-only and must never use the
+`NEXT_PUBLIC_` prefix. In local development, email delivery can be omitted to
+show a private development link instead; production invitations are unavailable
+unless the email provider is configured. See the invitation section below.
 
 ## Supabase setup
 
@@ -50,23 +70,34 @@ browser use and is protected by RLS. Never put a Supabase secret/service-role
 key in a `NEXT_PUBLIC_*` variable or browser code. `.env.local` is ignored by
 Git.
 
-### 3. Apply the database setup to a new project only
+### 3. Apply the database setup manually
 
-The versioned migrations are in `supabase/migrations/`; the matching
-`supabase/manual-setup.sql` script is provided for the Dashboard SQL Editor.
-For a new, empty project, open **SQL Editor**, paste that script, review it, and
-run it once. Do not run the combined setup against a project where these tables
-and policies already exist: it is not intended to be rerun. For an existing
-Phase 4 database, apply the participant and expense migrations separately and
-in order: open **SQL Editor → New query**, paste and run the entire contents of
-`supabase/migrations/20261116000000_participants_invitations.sql`, then repeat
-for `supabase/migrations/20261116000001_expense_management.sql`. Do not rerun
-either migration after success. Their transactions roll back on failure.
-Dashboard execution does not add migration history to a CLI migration ledger.
-Back up the database and test on a staging project first. The migrations revoke
-direct participant, expense/share, and settlement writes from `authenticated`;
-older or external clients that performed those writes must use authorized RPCs
-instead.
+The ordered migrations in `supabase/migrations/` are:
+
+1. `20261114000000_initial_schema.sql`
+2. `20261114000001_row_level_security.sql`
+3. `20261116000000_participants_invitations.sql`
+4. `20261116000001_expense_management.sql`
+5. `20261116000002_balances_settlements.sql`
+6. `20261116000003_trip_dashboard_overview.sql`
+
+For a **new, empty** project only, open **Supabase Dashboard → SQL Editor**,
+paste the complete `supabase/manual-setup.sql`, review it, and run it once.
+Never run that combined script against an existing project or rerun it after
+success.
+
+For an existing database, first check which migrations have already been
+applied. Apply only the missing files, in the order above: open **SQL Editor →
+New query**, paste the complete contents of one missing migration, review and
+run it, then proceed to the next. In particular, the trip overview migration
+`20261116000003_trip_dashboard_overview.sql` is required for the enhanced
+dashboard and must follow the balances/settlements migration. Dashboard SQL
+execution does not add migration history to a CLI migration ledger. Back up
+the database and test the ordered migrations in a staging project first.
+Participant, expense/share, and settlement direct writes are revoked from
+`authenticated`; older or external clients that performed those writes must
+use the authorized RPCs instead. The app does not connect through Supabase CLI
+or apply migrations automatically.
 
 ### 4. Configure authentication URLs and email
 
@@ -129,18 +160,22 @@ using the project's approved workflow and review the diff before replacing it.
   tables or logs.
 - Supabase's session lifetime is controlled by the project's Auth settings.
   There is no per-login “Remember me” override in this UI.
-- The registration checkbox requires terms acceptance, but publishable Terms
-  of Service and Privacy Policy content must be supplied before public launch.
+- Registration links to `/terms` and `/privacy`. Those routes are conspicuously
+  marked as placeholders and are not publishable legal documents. Replace their
+  content with owner-specific information reviewed by qualified counsel before
+  public launch. The `/contact` route also requires a verified support channel.
 
-## Trips
+## Trips and dashboard
 
-The Trips dashboard uses the signed-in user's existing RLS permissions.
+The Trips dashboard uses an authenticated, read-only database function to load
+trip details in batches: active participant count, exact total expenses, and
+the signed-in member's net balance. It does not sum across currencies. Trip
+labels are derived from start/end dates; there is no stored archive or status.
 The database automatically adds the creator as an active owner when a trip is
 created. Only the creator with active membership can edit a trip. A start date
-is required by the existing schema; destination and trip status are not stored.
-Trip deletion and archiving are not offered: the schema has no archive mechanism,
-and deletion can remove associated financial history. Balances and settlements
-are available on each trip's detail page.
+is required by the existing schema; destination is not stored. Trip deletion
+and archiving are not offered because deletion can remove associated financial
+history. Detailed balances and settlements are available on each trip page.
 
 ## Participants and invitations
 
@@ -245,6 +280,66 @@ run the combined `manual-setup.sql` on an existing database; it is only for a
 new, empty project. Back up the database and test the ordered migrations in a
 staging project first. No migration is applied by the application.
 
+The dashboard overview migration is also required for the `/trips` dashboard.
+On an existing project where migrations 1–5 have already been applied, run
+`supabase/migrations/20261116000003_trip_dashboard_overview.sql` once through
+**Supabase Dashboard → SQL Editor → New query**. It adds a read-only,
+authenticated RPC and does not change tables or RLS policies.
+
+## Privacy, terms, and support
+
+The application includes `/privacy`, `/terms`, and `/contact` pages so
+registration and users have reachable information links. They deliberately
+contain clearly marked placeholders, not invented owner details, contact
+information, legal commitments, or reviewed policy text. Before public
+availability, replace the drafts with accurate, legally reviewed content and
+provide a monitored support contact. There is no account-deletion workflow.
+
+## Production deployment on Vercel
+
+1. Back up the database and test all missing migrations on a staging Supabase
+   project. Do not run `manual-setup.sql` against an existing database.
+2. Complete and review the Privacy Policy and Terms of Service, configure a
+   verified support channel, and decide the data retention/request process.
+3. Add the required Supabase variables to the Vercel project for the intended
+   Production, Preview, and Development environments. Add all three server-only
+   invitation variables in each environment where email invitations should
+   work.
+4. In Supabase **Authentication → URL Configuration**, set the Site URL to the
+   actual production origin and allow the exact `/auth/callback` URL. Allow
+   other deployment callback origins only when they are intentionally used.
+   Keep email confirmation enabled and verify the configured email templates.
+5. Configure the Vercel project to use the repository root, Node.js 20.9 or
+   later, `npm ci` for installation, and `npm run build` for the production
+   build. Confirm the lockfile is included.
+6. Review environment-variable exposure, run the checks below, deploy to a
+   non-public preview, and manually verify: register and confirm an account;
+   create a trip; invite and accept a participant; create, edit, and delete an
+   expense before settlement; verify balances and suggestions; record a
+   settlement and confirm the history and expense lock; check non-member
+   authorization, empty states, legal links, and mobile layouts.
+7. Set `TRIPSPLIT_APP_URL` to the exact origin for each Vercel environment.
+   Configure Resend with a verified sender domain and least-privilege API key.
+   Invitation-provider acceptance does not guarantee delivery.
+
+## Known limitations
+
+- Trip status is date-derived. The schema has no archive, destination, or
+  explicit completion field.
+- Trips use one configured currency; cross-currency conversion and totals are
+  not implemented.
+- Settlement entries are immutable. Once any settlement exists, expense
+  creation, editing, and deletion are blocked to protect settled history.
+- Settlement suggestions are deterministic and compact, but are not guaranteed
+  to find the globally minimal number of transfers for every ledger.
+- The app records settlements; it does not initiate or process payments.
+- There is no account deletion or self-service data export flow.
+- Privacy, terms, and support content need owner completion and review.
+- No external production error-monitoring provider is configured.
+- The repository has Jest unit/action and PGlite migration integration tests,
+  but no persistent automated browser end-to-end test harness; complete the
+  preview workflow above manually before release.
+
 ## Checks
 
 ```bash
@@ -252,6 +347,7 @@ npm test
 npm run lint
 npx tsc --noEmit
 npm run build
+npm audit --omit=dev
 ```
 
 ## Project structure
@@ -259,7 +355,8 @@ npm run build
 - `src/app/` — App Router routes and global styles
 - `src/components/` — shared components
 - `src/components/ui/` — reusable interface components
-- `src/features/` — future feature modules
+- `src/features/` — authentication, trips, participants, expenses, balances,
+  and legal feature modules
 - `src/hooks/` — shared React hooks
 - `src/lib/` — shared utilities
 - `src/types/` — shared TypeScript types

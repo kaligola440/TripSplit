@@ -90,6 +90,7 @@ beforeAll(async () => {
     "20261116000000_participants_invitations.sql",
     "20261116000001_expense_management.sql",
     "20261116000002_balances_settlements.sql",
+    "20261116000003_trip_dashboard_overview.sql",
   ]) {
     await db.exec(readFileSync(join("supabase", "migrations", migration), "utf8"));
   }
@@ -192,6 +193,36 @@ describe("invitation migration against PostgreSQL", () => {
       await expect(recordSettlement(debtorId, creditorId, "4.000001")).rejects.toMatchObject({ code: "23505" });
       await expect(recordSettlement(debtorId, creditorId, "6.000001")).rejects.toMatchObject({ code: "23514" });
       expect((await db.query("SELECT id FROM public.settlements WHERE trip_id = $1", [tripId])).rows).toHaveLength(1);
+    });
+
+    describe("trip dashboard overview migration against PostgreSQL", () => {
+      it("returns exact trip totals and the viewer's balance only for active memberships", async () => {
+        const guestId = await addExternal("Guest", "guest@example.com");
+        await createExpense("1.000001", guestId, [
+          { participant_id: ownerParticipantId, share_amount: "1.000001", share_type: "custom" },
+        ]);
+
+        const { rows } = await db.query<{
+          id: string;
+          participant_count: number;
+          total_expenses: string;
+          net_balance: string;
+        }>("SELECT id, participant_count, total_expenses, net_balance FROM public.get_trip_dashboard()");
+        expect(rows).toEqual([{
+          id: tripId,
+          participant_count: 2,
+          total_expenses: "1.000001",
+          net_balance: "-1.000001",
+        }]);
+
+        await asUser(stranger);
+        expect((await db.query("SELECT id FROM public.get_trip_dashboard()")).rows).toEqual([]);
+        await db.exec("RESET ROLE");
+        await db.query("SELECT set_config('request.jwt.claim.sub', '', false)");
+        await expect(db.query("SELECT id FROM public.get_trip_dashboard()")).rejects.toMatchObject({ code: "42501" });
+        await db.exec("SET ROLE anon");
+        await expect(db.query("SELECT id FROM public.get_trip_dashboard()")).rejects.toMatchObject({ code: "42501" });
+      });
     });
 
     it("rejects unauthorized and cross-trip settlements, invalid amounts, and direct table writes", async () => {

@@ -418,6 +418,19 @@ export type Database = {
         Args: { p_trip_id: string };
         Returns: Json;
       };
+      get_trip_dashboard: {
+        Args: Record<string, never>;
+        Returns: {
+          id: string;
+          name: string;
+          start_date: string;
+          end_date: string | null;
+          currency: string;
+          participant_count: number;
+          total_expenses: string;
+          net_balance: string;
+        }[];
+      };
       record_trip_settlement: {
         Args: {
           p_trip_id: string;

@@ -1,0 +1,18 @@
+"use client";
+
+type AppErrorProps = {
+  error: Error & { digest?: string };
+  retry: () => void;
+};
+
+export default function AppError({ retry }: AppErrorProps) {
+  return (
+    <main className="min-h-screen bg-[#f7f8f6] px-5 py-16 text-center text-slate-950">
+      <div role="alert" className="mx-auto max-w-lg rounded-3xl border border-rose-200 bg-white p-8">
+        <h1 className="text-xl font-semibold">Something went wrong</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-600">We couldn&apos;t complete this request. Please try again.</p>
+        <button type="button" onClick={retry} className="mt-6 rounded-xl bg-emerald-800 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">Try again</button>
+      </div>
+    </main>
+  );
+}

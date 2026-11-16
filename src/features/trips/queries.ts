@@ -1,23 +1,15 @@
 import "server-only";
 import type { createClient } from "@/lib/supabase/server";
+import type { Database } from "@/types/database.types";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
-type TripSummary = {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string | null;
-  currency: string;
-};
+export type TripSummary = Database["public"]["Functions"]["get_trip_dashboard"]["Returns"][number];
 
 export async function listTrips(supabase: SupabaseClient): Promise<TripSummary[]> {
   const pageSize = 100;
   const trips: TripSummary[] = [];
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase.from("trips")
-      .select("id, name, start_date, end_date, currency")
-      .order("start_date", { ascending: false })
-      .order("id", { ascending: false })
+    const { data, error } = await supabase.rpc("get_trip_dashboard", {})
       .range(offset, offset + pageSize - 1);
     if (error) throw new Error("Unable to load trips.");
     trips.push(...data);

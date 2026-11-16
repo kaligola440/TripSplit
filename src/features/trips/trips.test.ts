@@ -1,6 +1,7 @@
 import { createTrip, updateTrip } from "@/features/trips/actions";
 import { validateTrip } from "@/features/trips/validation";
 import { listTrips } from "@/features/trips/queries";
+import { formatTripAmount, formatTripBalance, getTripScheduleStatus } from "@/features/trips/dashboard";
 import { initialAuthFormState } from "@/features/auth/form-state";
 import { createClient } from "@/lib/supabase/server";
 import TripsPage from "@/app/trips/page";
@@ -32,6 +33,7 @@ function client(userId: string | null = "verified-user") {
         : { data: null, error: { name: "AuthSessionMissingError" } }),
     },
     from: jest.fn(),
+    rpc: jest.fn(),
   };
 }
 
@@ -65,17 +67,19 @@ describe("trip actions and access", () => {
   });
 
   describe("trip dashboard queries", () => {
-    it("loads additional pages rather than silently truncating the trip list", async () => {
+    it("loads additional dashboard pages rather than silently truncating the trip list", async () => {
       const supabase = client();
-      const trip = { id: tripId, name: "Trip", start_date: "2027-01-01", end_date: null, currency: "EUR" };
+      const trip = {
+        id: tripId, name: "Trip", start_date: "2027-01-01", end_date: null, currency: "EUR",
+        participant_count: 2, total_expenses: "15.000001", net_balance: "-5.000001",
+      };
       const range = jest.fn()
         .mockResolvedValueOnce({ data: Array(100).fill(trip), error: null })
         .mockResolvedValueOnce({ data: [trip], error: null });
-      const orderId = jest.fn(() => ({ range }));
-      const orderDate = jest.fn(() => ({ order: orderId }));
-      supabase.from.mockReturnValue({ select: () => ({ order: orderDate }) });
+      supabase.rpc.mockReturnValue({ range });
       const result = await listTrips(supabase as never);
       expect(result).toHaveLength(101);
+      expect(supabase.rpc).toHaveBeenCalledWith("get_trip_dashboard", {});
       expect(range).toHaveBeenNthCalledWith(1, 0, 99);
       expect(range).toHaveBeenNthCalledWith(2, 100, 199);
     });
@@ -83,9 +87,22 @@ describe("trip actions and access", () => {
     it("surfaces query failures instead of returning an empty dashboard", async () => {
       const supabase = client();
       const range = jest.fn().mockResolvedValue({ data: null, error: { message: "provider detail" } });
-      supabase.from.mockReturnValue({ select: () => ({ order: () => ({ order: () => ({ range }) }) }) });
+      supabase.rpc.mockReturnValue({ range });
       await expect(listTrips(supabase as never)).rejects.toThrow("Unable to load trips.");
     });
+  });
+
+  it("classifies trips by dates and formats financial values without floating-point arithmetic", () => {
+    const trip = { start_date: "2027-01-10", end_date: "2027-01-12" };
+    expect(getTripScheduleStatus(trip, "2027-01-09")).toBe("upcoming");
+    expect(getTripScheduleStatus(trip, "2027-01-10")).toBe("active");
+    expect(getTripScheduleStatus(trip, "2027-01-12")).toBe("active");
+    expect(getTripScheduleStatus(trip, "2027-01-13")).toBe("completed");
+    expect(getTripScheduleStatus({ start_date: "2027-01-10", end_date: null }, "2027-02-01")).toBe("active");
+    expect(formatTripAmount("0.100001", "EUR")).toBe("0.100001 EUR");
+    expect(formatTripBalance("-12.000001", "EUR")).toEqual({ label: "You owe", amount: "12.000001 EUR" });
+    expect(formatTripBalance("0.000000", "EUR")).toEqual({ label: "Settled", amount: "0 EUR" });
+    expect(() => formatTripAmount("not-money", "EUR")).toThrow("Invalid monetary amount");
   });
 
   it("redirects unauthenticated dashboard access and rejects mutations", async () => {

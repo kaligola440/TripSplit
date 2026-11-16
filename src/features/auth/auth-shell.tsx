@@ -54,7 +54,12 @@ export function AuthShell({
       </section>
 
       <footer className="relative mx-auto w-full max-w-7xl border-t border-slate-200/80 py-5 text-center text-xs text-slate-500">
-        Made for the trips worth remembering.
+        <p>Made for the trips worth remembering.</p>
+        <nav aria-label="Legal and support" className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-2">
+          <Link href="/privacy" className="hover:text-emerald-800">Privacy</Link>
+          <Link href="/terms" className="hover:text-emerald-800">Terms</Link>
+          <Link href="/contact" className="hover:text-emerald-800">Contact</Link>
+        </nav>
       </footer>
     </main>
   );

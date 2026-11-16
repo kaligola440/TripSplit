@@ -7,6 +7,7 @@ import { FormField } from "@/features/auth/form-field";
 import { FormFeedback } from "@/features/auth/form-feedback";
 import { initialAuthFormState } from "@/features/auth/form-state";
 import { PasswordInput, SubmitButton, TextInput } from "@/features/auth/form-controls";
+import Link from "next/link";
 
 export function RegisterForm() {
   const [state, formAction] = useActionState(register, initialAuthFormState);
@@ -71,7 +72,10 @@ export function RegisterForm() {
             className="mt-1 size-4 rounded border-slate-300 accent-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
           />
           <span>
-            I agree to TripSplit&apos;s Terms of Service and Privacy Policy.
+            I agree to TripSplit&apos;s{" "}
+            <Link href="/terms" className="font-semibold text-emerald-800 underline underline-offset-2">Terms of Service</Link>
+            {" "}and{" "}
+            <Link href="/privacy" className="font-semibold text-emerald-800 underline underline-offset-2">Privacy Policy</Link>.
           </span>
         </label>
         {fieldErrors.acceptTerms ? (

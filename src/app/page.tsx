@@ -90,8 +90,11 @@ export default function Home() {
           </aside>
         </section>
 
-        <footer className="border-t border-slate-200/80 py-5 text-center text-xs text-slate-500">
-          Made for the trips worth remembering.
+        <footer className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-slate-200/80 py-5 text-xs text-slate-600">
+          <span>Made for the trips worth remembering.</span>
+          <Link href="/privacy" className="hover:text-emerald-800">Privacy</Link>
+          <Link href="/terms" className="hover:text-emerald-800">Terms</Link>
+          <Link href="/contact" className="hover:text-emerald-800">Contact</Link>
         </footer>
       </div>
     </main>
