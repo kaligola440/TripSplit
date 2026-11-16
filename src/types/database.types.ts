@@ -110,6 +110,60 @@ export type Database = {
           },
         ];
       };
+      trip_invitations: {
+        Row: {
+          id: string;
+          trip_id: string;
+          participant_id: string;
+          email: string;
+          token_hash: string;
+          status: string;
+          expires_at: string;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          participant_id: string;
+          email: string;
+          token_hash: string;
+          status?: string;
+          expires_at?: string;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          trip_id?: string;
+          participant_id?: string;
+          email?: string;
+          token_hash?: string;
+          status?: string;
+          expires_at?: string;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "trip_invitations_participant_trip_fkey";
+            columns: ["participant_id", "trip_id"];
+            isOneToOne: false;
+            referencedRelation: "trip_participants";
+            referencedColumns: ["id", "trip_id"];
+          },
+          {
+            foreignKeyName: "trip_invitations_trip_id_fkey";
+            columns: ["trip_id"];
+            isOneToOne: false;
+            referencedRelation: "trips";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       expenses: {
         Row: {
           id: string;
@@ -277,6 +331,30 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      add_external_participant: {
+        Args: { p_trip_id: string; p_name: string; p_email: string };
+        Returns: string;
+      };
+      create_trip_invitation: {
+        Args: { p_trip_id: string; p_name: string; p_email: string; p_token_hash: string };
+        Returns: string;
+      };
+      resend_trip_invitation: {
+        Args: { p_trip_id: string; p_invitation_id: string; p_token_hash: string };
+        Returns: string;
+      };
+      cancel_trip_invitation: {
+        Args: { p_trip_id: string; p_invitation_id: string };
+        Returns: undefined;
+      };
+      respond_to_trip_invitation: {
+        Args: { p_token: string; p_accept: boolean };
+        Returns: Json;
+      };
+      remove_trip_participant: {
+        Args: { p_trip_id: string; p_participant_id: string };
+        Returns: string;
+      };
       create_expense_with_shares: {
         Args: {
           p_trip_id: string;

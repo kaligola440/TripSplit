@@ -3,7 +3,8 @@
 TripSplit is a responsive Next.js application for shared trips and expenses.
 Email/password authentication and user profile management are implemented with
 Supabase Auth. Authenticated users can create, view, and edit trips.
-Expense management screens are not implemented yet.
+Trip creators can manage participants and email invitations. Expense
+management screens are not implemented yet.
 
 ## Run the application
 
@@ -54,9 +55,16 @@ Git.
 The versioned migrations are in `supabase/migrations/`; the matching
 `supabase/manual-setup.sql` script is provided for the Dashboard SQL Editor.
 For a new, empty project, open **SQL Editor**, paste that script, review it, and
-run it once. Do not run it against a project where these tables and policies
-already exist: the schema setup is not intended to be rerun. Dashboard
-execution does not add migration history to a CLI migration ledger.
+run it once. Do not run the combined setup against a project where these tables
+and policies already exist: it is not intended to be rerun. For an existing
+Phase 4 database, use only `supabase/migrations/20261116000000_participants_invitations.sql`:
+open **SQL Editor → New query**, paste that file's entire contents, and run it
+once before deploying this application version. Its transaction rolls back if
+it fails; do not retry an already successful migration. Dashboard execution
+does not add migration history to a CLI migration ledger. Back up the database
+and test on a staging project first. The migration revokes direct participant
+writes from `authenticated`; older or external clients that performed those
+writes must switch to the new authorized functions.
 
 ### 4. Configure authentication URLs and email
 
@@ -130,8 +138,54 @@ The database automatically adds the creator as an active owner when a trip is
 created. Only the creator with active membership can edit a trip. A start date
 is required by the existing schema; destination and trip status are not stored.
 Trip deletion and archiving are not offered: the schema has no archive mechanism,
-and deletion can remove associated financial history. Participants, expenses,
-balances and settlements management remain future features.
+and deletion can remove associated financial history. Expenses, balances and
+settlements management remain future features.
+
+## Participants and invitations
+
+Only an active trip creator can add external participants, invite users, resend
+or cancel invitations, or remove participants. External participants have no
+account access. An invitation can link an existing external participant without
+losing their financial references. Removal is blocked when a participant is
+referenced by an expense, expense share or settlement; keep their record to
+preserve financial history. The owner cannot be removed.
+
+Invitations expire after seven days. Tokens are random, stored only as SHA-256
+hashes, and redeemed once by a user whose confirmed Supabase Auth email matches
+the invitation. Resending rotates the token and invalidates the previous link.
+Emails alone never grant access. RLS and database functions enforce these rules,
+and serialize participant changes per trip. To avoid ambiguous legacy records,
+the functions reject duplicate participant emails within a trip; resolve existing
+duplicates safely before inviting those addresses.
+
+### Invitation email configuration
+
+Invitation delivery is separate from Supabase Auth's confirmation emails.
+For real invitation emails, configure a Resend account, verify a sending domain,
+and create an API key with permission to send email. Set these **server-only**
+environment variables locally in `.env.local` and in Vercel for each intended
+environment (never use the `NEXT_PUBLIC_` prefix):
+
+- `TRIPSPLIT_APP_URL`: the exact application origin, e.g.
+  `http://localhost:3000` for local development or your actual HTTPS production
+  origin. Do not include a path or trailing slash.
+- `RESEND_API_KEY`: your real Resend API key.
+- `INVITATION_FROM_EMAIL`: a sender address on your verified domain.
+
+Restart the local server after changing variables. Set `TRIPSPLIT_APP_URL`
+separately for each Vercel environment to avoid sending links to the wrong
+deployment. Without a configured provider, production refuses to create or
+resend invitations. In `npm run dev`, if neither email credential is set, the
+manager sees a private development link instead; **no email is sent**. Copy it
+only to the intended recipient. A rejected or failed provider request is shown
+as an error and the manager can retry with Resend. The provider accepting a
+message does not guarantee delivery.
+
+The recipient opens the invitation, signs in with the invited email address,
+or registers and confirms that address first. After signing in, they must reopen
+the original invitation link to accept or decline it. Keep invitation links
+private. Supabase Auth's existing Site URL, callback URL and email confirmation
+settings remain required; no additional Supabase redirect URL is needed.
 
 ## Checks
 

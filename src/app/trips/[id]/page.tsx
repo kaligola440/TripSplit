@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { requireAuthenticatedUser } from "@/lib/supabase/auth";
 import { isTripId } from "@/features/trips/validation";
 import { formatTripDate, TripShell } from "@/features/trips/trip-shell";
+import { AddParticipantForm, InvitationControls, RemoveParticipantControl } from "@/features/participants/participant-controls";
+import { invitationStatus } from "@/features/participants/status";
 
 export default async function TripDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
@@ -15,8 +17,11 @@ export default async function TripDetailPage({ params, searchParams }: {
   if (error) throw new Error("Unable to load trip.");
   if (!trip) notFound();
   const { data: participants, error: participantError } = await supabase.from("trip_participants")
-    .select("id, user_id, display_name, role, status").eq("trip_id", id).order("created_at");
+    .select("id, user_id, display_name, email, role, status").eq("trip_id", id).order("created_at");
   if (participantError) throw new Error("Unable to load trip participants.");
+  const { data: invitations, error: invitationError } = await supabase.from("trip_invitations")
+    .select("id, participant_id, email, status, expires_at, created_at").eq("trip_id", id).order("created_at", { ascending: false });
+  if (invitationError) throw new Error("Unable to load trip invitations.");
   const owner = participants.find((participant) => participant.role === "owner");
   const canEdit = trip.created_by === userId && participants.some((participant) => participant.user_id === userId && participant.status === "active");
 
@@ -42,13 +47,24 @@ export default async function TripDetailPage({ params, searchParams }: {
             <div className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
               <h2 className="text-lg font-semibold">More to come</h2>
               <p className="mt-2 text-sm text-slate-600">These trip tools are not available yet.</p>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">{["Participant management", "Expenses", "Balances", "Settlements"].map((item) => <div key={item} className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500">{item} · Coming later</div>)}</div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">{["Expenses", "Balances", "Settlements"].map((item) => <div key={item} className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500">{item} · Coming later</div>)}</div>
             </div>
           </div>
           <div className="h-fit rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
             <div className="flex items-center gap-2"><UsersRound aria-hidden="true" size={20} className="text-emerald-700" /><h2 className="text-lg font-semibold">Participants</h2></div>
             <p className="mt-3 text-sm text-slate-600">Created by {owner?.display_name ?? (trip.created_by === userId ? "you" : "a trip member")}.</p>
-            {participants.length ? <ul className="mt-5 divide-y divide-slate-100">{participants.map((participant) => <li key={participant.id} className="flex items-center justify-between gap-3 py-3 text-sm"><span className="break-words font-medium">{participant.display_name}</span><span className="shrink-0 text-xs capitalize text-slate-500">{participant.role} · {participant.status}</span></li>)}</ul> : <p className="mt-5 text-sm text-slate-500">Participant details are unavailable for this account.</p>}
+            {participants.length ? <ul className="mt-5 divide-y divide-slate-100">{participants.map((participant) => {
+              const invitation = invitations.find((item) => item.participant_id === participant.id && item.status === "pending") ??
+                invitations.find((item) => item.participant_id === participant.id);
+              const status = invitation ? invitationStatus(invitation.status, invitation.expires_at) : null;
+              return <li key={participant.id} className="py-4 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="break-words font-medium">{participant.display_name}</p>{participant.email ? <p className="mt-1 break-all text-xs text-slate-500">{participant.email}</p> : null}</div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs capitalize text-slate-600">{participant.role}</span></div>
+                <p className="mt-2 text-xs text-slate-500">{participant.user_id ? (participant.status === "active" ? "Trip access active" : "Trip access inactive") : (participant.status === "active" ? "External · No account access" : "No account access")}{status ? ` · Invitation: ${status.charAt(0).toUpperCase() + status.slice(1)}` : ""}</p>
+                {canEdit && invitation && (status === "pending" || status === "expired") ? <InvitationControls tripId={id} invitationId={invitation.id} /> : null}
+                {canEdit && participant.role !== "owner" ? <RemoveParticipantControl tripId={id} participantId={participant.id} /> : null}
+              </li>;
+            })}</ul> : <p className="mt-5 text-sm text-slate-500">Participant details are unavailable for this account.</p>}
+            {canEdit ? <AddParticipantForm tripId={id} /> : null}
           </div>
         </div>
       </section>
