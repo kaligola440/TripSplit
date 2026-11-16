@@ -15,6 +15,7 @@ const hash = createHash("sha256").update(token).digest("hex");
 const nextHash = createHash("sha256").update(nextToken).digest("hex");
 let db: PGlite;
 let tripId: string;
+let ownerParticipantId: string;
 
 async function asUser(id: string) {
   await db.exec("RESET ROLE; SET ROLE authenticated;");
@@ -36,6 +37,23 @@ async function respond(invitationToken = token, accept = true) {
   return result.rows[0].result;
 }
 
+async function createExpense(
+  amount: string,
+  payerId: string,
+  shares: { participant_id: string; share_amount: string; share_type: string; share_percentage?: string | null }[],
+  expenseId: string | null = null,
+) {
+  const result = await db.query<{ id: string }>(
+    expenseId
+      ? `SELECT public.save_expense_with_shares($1, $2, 'Expense', $3, 'EUR', '2027-01-01', $4, $5::jsonb, 'food', NULL) AS id`
+      : `SELECT public.create_expense_with_shares($1, 'Expense', $2, 'EUR', '2027-01-01', $3, $4::jsonb, 'food', NULL) AS id`,
+    expenseId
+      ? [expenseId, tripId, amount, payerId, JSON.stringify(shares)]
+      : [tripId, amount, payerId, JSON.stringify(shares)],
+  );
+  return result.rows[0].id;
+}
+
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(`
@@ -54,6 +72,7 @@ beforeAll(async () => {
     "20261114000000_initial_schema.sql",
     "20261114000001_row_level_security.sql",
     "20261116000000_participants_invitations.sql",
+    "20261116000001_expense_management.sql",
   ]) {
     await db.exec(readFileSync(join("supabase", "migrations", migration), "utf8"));
   }
@@ -75,6 +94,11 @@ beforeEach(async () => {
     [owner],
   );
   tripId = result.rows[0].id;
+  const ownerParticipant = await db.query<{ id: string }>(
+    "SELECT id FROM public.trip_participants WHERE trip_id = $1 AND user_id = $2",
+    [tripId, owner],
+  );
+  ownerParticipantId = ownerParticipant.rows[0].id;
 });
 
 afterAll(async () => { await db.close(); });
@@ -91,6 +115,140 @@ describe("invitation migration against PostgreSQL", () => {
     await asUser(invited);
     expect((await db.query("SELECT id FROM public.trips WHERE id = $1", [tripId])).rows).toHaveLength(0);
     await expect(db.query("SELECT public.add_external_participant($1, $2, $3)", [tripId, "Unauthorized", "x@example.com"])).rejects.toMatchObject({ code: "42501" });
+  });
+
+  describe("expense management migration against PostgreSQL", () => {
+    it("revokes direct table writes but leaves authenticated RPCs available", async () => {
+      await expect(db.query(
+        `INSERT INTO public.expenses(trip_id, description, amount, currency, expense_date, paid_by_participant_id, created_by)
+         VALUES ($1, 'Bypass', 1, 'EUR', '2027-01-01', $2, $3)`,
+        [tripId, ownerParticipantId, owner],
+      )).rejects.toMatchObject({ code: "42501" });
+      await expect(db.query("DELETE FROM public.expense_shares")).rejects.toMatchObject({ code: "42501" });
+      const createdId = await createExpense("1", ownerParticipantId, [
+        { participant_id: ownerParticipantId, share_amount: "1", share_type: "custom" },
+      ]);
+      expect(createdId).toMatch(/^[0-9a-f-]{36}$/i);
+    });
+
+    it("creates equal splits at six-decimal precision and allows payer outside the share set", async () => {
+      const payer = await db.query<{ id: string }>(
+        "SELECT public.add_external_participant($1, 'Payer', 'payer@example.com') AS id", [tripId],
+      );
+      const second = await db.query<{ id: string }>(
+        "SELECT public.add_external_participant($1, 'Sharee', 'sharee@example.com') AS id", [tripId],
+      );
+      const equalShares = second.rows[0].id < ownerParticipantId
+        ? [
+            { participant_id: second.rows[0].id, share_amount: "5", share_type: "equal" },
+            { participant_id: ownerParticipantId, share_amount: "5.000001", share_type: "equal" },
+          ]
+        : [
+            { participant_id: ownerParticipantId, share_amount: "5", share_type: "equal" },
+            { participant_id: second.rows[0].id, share_amount: "5.000001", share_type: "equal" },
+          ];
+      const createdId = await createExpense("10.000001", payer.rows[0].id, equalShares);
+      const result = await db.query<{ amount: string; payer: string; total: string }>(
+        `SELECT e.amount::text AS amount, p.display_name AS payer,
+          (SELECT sum(s.share_amount)::text FROM public.expense_shares s WHERE s.expense_id = e.id) AS total
+         FROM public.expenses e JOIN public.trip_participants p ON p.id = e.paid_by_participant_id WHERE e.id = $1`,
+        [createdId],
+      );
+      expect(result.rows[0]).toEqual({ amount: "10.000001", payer: "Payer", total: "10.000001" });
+    });
+
+    it("rejects non-positive totals, inactive or cross-trip participants, and mismatched custom shares", async () => {
+      const custom = [{ participant_id: ownerParticipantId, share_amount: "10", share_type: "custom" }];
+      await expect(createExpense("0", ownerParticipantId, custom)).rejects.toMatchObject({ code: "22023" });
+      await expect(createExpense("-1", ownerParticipantId, custom)).rejects.toMatchObject({ code: "22023" });
+      await expect(createExpense("10", ownerParticipantId, [{ participant_id: ownerParticipantId, share_amount: "9", share_type: "custom" }])).rejects.toMatchObject({ code: "23514" });
+
+      await db.exec("RESET ROLE");
+      const otherTrip = await db.query<{ id: string }>(
+        "INSERT INTO public.trips(name, start_date, currency, created_by) VALUES ('Other trip', '2027-01-01', 'EUR', $1) RETURNING id", [owner],
+      );
+      const outside = await db.query<{ id: string }>(
+        "SELECT id FROM public.trip_participants WHERE trip_id = $1 AND role = 'owner'", [otherTrip.rows[0].id],
+      );
+      await asUser(owner);
+      await expect(createExpense("10", outside.rows[0].id, [{ participant_id: ownerParticipantId, share_amount: "10", share_type: "custom" }])).rejects.toMatchObject({ code: "23503" });
+      await db.exec("RESET ROLE");
+      await db.query("UPDATE public.trip_participants SET status = 'inactive' WHERE trip_id = $1 AND user_id = $2", [tripId, invited]);
+      await asUser(owner);
+      await expect(createExpense("10", ownerParticipantId, [{ participant_id: invited, share_amount: "10", share_type: "custom" }])).rejects.toMatchObject({ code: "23503" });
+      expect((await db.query("SELECT id FROM public.expenses WHERE trip_id = $1", [tripId])).rows).toHaveLength(0);
+    });
+
+    it("atomically updates shares with exact percentage rounding", async () => {
+      const second = await db.query<{ id: string }>(
+        "SELECT public.add_external_participant($1, 'Sharee', 'sharee@example.com') AS id", [tripId],
+      );
+      const createdId = await createExpense("10", ownerParticipantId, [
+        { participant_id: ownerParticipantId, share_amount: "10", share_type: "custom" },
+      ]);
+      const percentageShares = second.rows[0].id < ownerParticipantId
+        ? [
+            { participant_id: second.rows[0].id, share_amount: "3.333333", share_type: "percentage", share_percentage: "33.333333" },
+            { participant_id: ownerParticipantId, share_amount: "6.666668", share_type: "percentage", share_percentage: "66.666667" },
+          ]
+        : [
+            { participant_id: ownerParticipantId, share_amount: "3.333333", share_type: "percentage", share_percentage: "33.333333" },
+            { participant_id: second.rows[0].id, share_amount: "6.666668", share_type: "percentage", share_percentage: "66.666667" },
+          ];
+      const updatedId = await createExpense("10.000001", ownerParticipantId, percentageShares, createdId);
+      expect(updatedId).toBe(createdId);
+      const shares = await db.query<{ share_amount: string; share_percentage: string }>(
+        "SELECT share_amount::text, share_percentage::text FROM public.expense_shares WHERE expense_id = $1 ORDER BY participant_id", [createdId],
+      );
+      expect(shares.rows).toEqual([
+        { share_amount: "3.333333", share_percentage: "33.333333" },
+        { share_amount: "6.666668", share_percentage: "66.666667" },
+      ]);
+    });
+
+    it("denies unauthorized writes and prevents create, update or delete when settlements exist", async () => {
+      const createdId = await createExpense("10", ownerParticipantId, [{ participant_id: ownerParticipantId, share_amount: "10", share_type: "custom" }]);
+      await db.exec("RESET ROLE");
+      const another = await db.query<{ id: string }>(
+        "SELECT public.add_external_participant($1, 'Other', 'other@example.com') AS id", [tripId],
+      );
+      await db.query(
+        "INSERT INTO public.settlements(trip_id, from_participant_id, to_participant_id, amount, currency, payment_date, created_by) VALUES ($1, $2, $3, 1, 'EUR', '2027-01-01', $4)",
+        [tripId, ownerParticipantId, another.rows[0].id, owner],
+      );
+      await asUser(owner);
+      const oneShare = [{ participant_id: ownerParticipantId, share_amount: "10", share_type: "custom" }];
+      await expect(createExpense("1", ownerParticipantId, [{ participant_id: ownerParticipantId, share_amount: "1", share_type: "custom" }])).rejects.toMatchObject({ code: "55000" });
+      await expect(createExpense("10", ownerParticipantId, oneShare, createdId)).rejects.toMatchObject({ code: "55000" });
+      const deleted = await db.query<{ result: string }>("SELECT public.delete_expense($1, $2) AS result", [tripId, createdId]);
+      expect(deleted.rows[0].result).toBe("settlements_exist");
+      await asUser(stranger);
+      await expect(createExpense("1", ownerParticipantId, [{ participant_id: ownerParticipantId, share_amount: "1", share_type: "custom" }])).rejects.toMatchObject({ code: "42501" });
+    });
+
+    it("deletes expenses and shares atomically when there are no settlements", async () => {
+      const createdId = await createExpense("10", ownerParticipantId, [{ participant_id: ownerParticipantId, share_amount: "10", share_type: "custom" }]);
+      const deleted = await db.query<{ result: string }>("SELECT public.delete_expense($1, $2) AS result", [tripId, createdId]);
+      expect(deleted.rows[0].result).toBe("deleted");
+      expect((await db.query("SELECT id FROM public.expense_shares WHERE expense_id = $1", [createdId])).rows).toHaveLength(0);
+      expect((await db.query("SELECT id FROM public.expenses WHERE id = $1", [createdId])).rows).toHaveLength(0);
+    });
+
+    it("returns exact decimal text and scoped filter/detail data through read RPCs", async () => {
+      const createdId = await createExpense("20.000001", ownerParticipantId, [
+        { participant_id: ownerParticipantId, share_amount: "20.000001", share_type: "custom" },
+      ]);
+      const listed = await db.query<{ id: string; amount: string; share_count: number }>(
+        `SELECT * FROM public.list_trip_expenses($1, NULL, NULL, 'food', $2, 'Expense', 'amount_desc')`,
+        [tripId, ownerParticipantId],
+      );
+      expect(listed.rows).toEqual([expect.objectContaining({ id: createdId, amount: "20.000001", share_count: 1 })]);
+      const detail = await db.query<{ data: { amount: string; shares: { share_amount: string }[] } }>(
+        "SELECT public.get_expense_detail($1) AS data", [createdId],
+      );
+      expect(detail.rows[0].data.amount).toBe("20.000001");
+      expect(detail.rows[0].data.shares[0].share_amount).toBe("20.000001");
+    });
   });
 
   it("stores only a protected hash, blocks duplicates, and activates only the confirmed matching account", async () => {

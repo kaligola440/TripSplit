@@ -3,8 +3,8 @@
 TripSplit is a responsive Next.js application for shared trips and expenses.
 Email/password authentication and user profile management are implemented with
 Supabase Auth. Authenticated users can create, view, and edit trips.
-Trip creators can manage participants and email invitations. Expense
-management screens are not implemented yet.
+Trip creators can manage participants and email invitations. Expense management
+uses exact-decimal splits and the existing Supabase security model.
 
 ## Run the application
 
@@ -57,14 +57,15 @@ The versioned migrations are in `supabase/migrations/`; the matching
 For a new, empty project, open **SQL Editor**, paste that script, review it, and
 run it once. Do not run the combined setup against a project where these tables
 and policies already exist: it is not intended to be rerun. For an existing
-Phase 4 database, use only `supabase/migrations/20261116000000_participants_invitations.sql`:
-open **SQL Editor → New query**, paste that file's entire contents, and run it
-once before deploying this application version. Its transaction rolls back if
-it fails; do not retry an already successful migration. Dashboard execution
-does not add migration history to a CLI migration ledger. Back up the database
-and test on a staging project first. The migration revokes direct participant
-writes from `authenticated`; older or external clients that performed those
-writes must switch to the new authorized functions.
+Phase 4 database, apply the participant and expense migrations separately and
+in order: open **SQL Editor → New query**, paste and run the entire contents of
+`supabase/migrations/20261116000000_participants_invitations.sql`, then repeat
+for `supabase/migrations/20261116000001_expense_management.sql`. Do not rerun
+either migration after success. Their transactions roll back on failure.
+Dashboard execution does not add migration history to a CLI migration ledger.
+Back up the database and test on a staging project first. The migrations revoke
+direct participant and expense/share writes from `authenticated`; older or
+external clients that performed those writes must use authorized RPCs instead.
 
 ### 4. Configure authentication URLs and email
 
@@ -103,9 +104,8 @@ using the project's approved workflow and review the diff before replacing it.
   ID on an active participant row grants access; an email address alone never
   grants privileges.
 - Monetary columns use PostgreSQL `numeric(20,6)`, not binary floating point.
-  Keep monetary inputs as decimal strings and do not calculate with JavaScript
-  `Number`. When doing financial calculations in a future feature, use an
-  exact-decimal library or PostgreSQL numeric operations. Equal and percentage
+  Expense inputs remain decimal strings; the expense UI uses `BigInt` units of
+  10^-6 (never JavaScript `Number`) for preview and split calculations. Equal and percentage
   splits truncate each share to six decimal places and assign the remaining
   fraction to the last participant in UUID order. A deferred constraint
   trigger verifies that all shares sum exactly to the expense total at commit.
@@ -138,8 +138,8 @@ The database automatically adds the creator as an active owner when a trip is
 created. Only the creator with active membership can edit a trip. A start date
 is required by the existing schema; destination and trip status are not stored.
 Trip deletion and archiving are not offered: the schema has no archive mechanism,
-and deletion can remove associated financial history. Expenses, balances and
-settlements management remain future features.
+and deletion can remove associated financial history. Balances and settlements
+management remain future features.
 
 ## Participants and invitations
 
@@ -186,6 +186,34 @@ or registers and confirms that address first. After signing in, they must reopen
 the original invitation link to accept or decline it. Keep invitation links
 private. Supabase Auth's existing Site URL, callback URL and email confirmation
 settings remain required; no additional Supabase redirect URL is needed.
+
+## Expenses
+
+Active trip participants can record expenses in the trip currency. The payer is
+selected independently from the people sharing; both must be active participants
+in the same trip. Expense creation, editing and deletion use authenticated
+database RPCs. Split rows and the expense are written atomically, and the
+existing deferred constraint validates final totals and equal/percentage
+rounding. Custom amounts must sum exactly to the total; percentages must sum
+exactly to 100%. Equal and percentage shares are truncated to six decimal places
+in participant UUID order, with the final UUID receiving the remainder.
+
+The expense list filters by date range, category, payer, description, and sort.
+List/detail RPCs return monetary amounts as decimal text to avoid JSON numeric
+conversion precision loss.
+
+The expense migration is **required before deploying this code**. It hardens the
+existing creation RPC, adds atomic save/delete and exact-text read RPCs, checks
+that referenced participants are active and in the same trip, and revokes direct
+expense/share writes so database functions enforce authorization on every path.
+It does not recreate tables or modify the existing RLS policies.
+
+The settlements table does not associate settlements with a specific expense.
+To avoid invalidating settled balances, creating, editing, and deleting expenses
+are blocked once any settlement exists for that trip. An active trip participant
+may create expenses; only their creator or the trip creator can edit or delete.
+This conservative lock can be replaced when a later settlement workflow models
+reconciliation explicitly.
 
 ## Checks
 

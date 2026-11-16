@@ -6,10 +6,11 @@ import { isTripId } from "@/features/trips/validation";
 import { formatTripDate, TripShell } from "@/features/trips/trip-shell";
 import { AddParticipantForm, InvitationControls, RemoveParticipantControl } from "@/features/participants/participant-controls";
 import { invitationStatus } from "@/features/participants/status";
+import { ExpenseList } from "@/features/expenses/expense-list";
 
 export default async function TripDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ created?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined> & { created?: string; expenseDeleted?: string }>;
 }) {
   const [{ supabase, userId }, { id }, query] = await Promise.all([requireAuthenticatedUser(), params, searchParams]);
   if (!isTripId(id)) notFound();
@@ -47,7 +48,7 @@ export default async function TripDetailPage({ params, searchParams }: {
             <div className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
               <h2 className="text-lg font-semibold">More to come</h2>
               <p className="mt-2 text-sm text-slate-600">These trip tools are not available yet.</p>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">{["Expenses", "Balances", "Settlements"].map((item) => <div key={item} className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500">{item} · Coming later</div>)}</div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">{["Balances", "Settlements"].map((item) => <div key={item} className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500">{item} · Coming later</div>)}</div>
             </div>
           </div>
           <div className="h-fit rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
@@ -67,6 +68,8 @@ export default async function TripDetailPage({ params, searchParams }: {
             {canEdit ? <AddParticipantForm tripId={id} /> : null}
           </div>
         </div>
+        {query.expenseDeleted === "1" ? <p role="status" className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">Expense deleted.</p> : null}
+        <div className="mt-6"><ExpenseList supabase={supabase} tripId={id} query={query} /></div>
       </section>
     </TripShell>
   );

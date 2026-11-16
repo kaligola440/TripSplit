@@ -369,6 +369,51 @@ export type Database = {
         };
         Returns: string;
       };
+      save_expense_with_shares: {
+        Args: {
+          p_expense_id: string | null;
+          p_trip_id: string;
+          p_description: string;
+          p_amount: string;
+          p_currency: string;
+          p_expense_date: string;
+          p_paid_by_participant_id: string;
+          p_shares: Json;
+          p_category?: string;
+          p_notes?: string | null;
+        };
+        Returns: string;
+      };
+      delete_expense: {
+        Args: { p_trip_id: string; p_expense_id: string };
+        Returns: string;
+      };
+      list_trip_expenses: {
+        Args: {
+          p_trip_id: string;
+          p_date_from?: string | null;
+          p_date_to?: string | null;
+          p_category?: string | null;
+          p_payer?: string | null;
+          p_search?: string | null;
+          p_sort?: string;
+        };
+        Returns: {
+          id: string;
+          description: string;
+          amount: string;
+          currency: string;
+          category: string;
+          expense_date: string;
+          paid_by_participant_id: string;
+          payer_name: string;
+          share_count: number;
+        }[];
+      };
+      get_expense_detail: {
+        Args: { p_expense_id: string };
+        Returns: Json;
+      };
     };
     Enums: {
       trip_participant_role: "owner" | "member";
